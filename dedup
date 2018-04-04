@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+
+#-----------------------------------------------------------------------------
+# Created by Kyle Nilson 2017-09-11
+#-----------------------------------------------------------------------------
+
+lastUpdate="2018-03-05 by Kyle Nilson."
+
+export LANG=en_EN
+IndexLen=4
+Gzipped=0
+FlipStrands=0
+PROmode=0
+KeepTmp=0
+Threads=8
+BufferSize=1G
+
+about="
+This script removes duplicate reads from paired-end libraries that
+  were generated with random base molecular indices on both ends.
+This script assumes that the first -n bases of R1 and R2 are indices.
+  It is highly recommended to trim Illumina adapter sequences from
+  3' ends of reads before aligning. Because dedup looks only at the
+  first -n bases of R1 and R2, however, this is not required.
+This script requires a paired-end alignment file in SAM format.
+This script requires samtools and bedtools.
+This script outputs a deduplicated BED file.
+"
+
+usage="	
+dedup [options]
+-n <int>	molecular index length [default $IndexLen]
+-1 <R1.fq>	R1 reads with untrimmed 5' n bp molecular index
+-2 <R2.fq>	R2 reads with untrimmed 5' n bp molecular index
+-g 		use if R1 and R2 files are gzipped
+-f		use to flip strands of final BED file
+-p		use to subtract 1 nt from 3' pause site for PRO-Seq
+-k		use to keep temporary files when troubleshooting
+-S <reads.sam>	paired-end alignment file
+-t <int>	number of threads for sort [default $Threads]
+-m <size>	size of memory buffer per thread for sort [default $BufferSize]
+"
+
+while getopts "n:1:2:gfpkS:t:m:" opt; do
+        case $opt in
+		n) IndexLen=$OPTARG;;
+		1) R1fastq=$OPTARG;;
+		2) R2fastq=$OPTARG;;
+		g) Gzipped=1;;
+		f) FlipStrands=1;;
+		p) PROmode=1;;
+		k) KeepTmp=1;;
+		S) SAM=$OPTARG;;
+		t) Threads=$OPTARG;;
+		m) BufferSize=$OPTARG;;
+	esac
+done
+
+if [[ -z "$R1fastq" ]] || [[ -z "$R2fastq" ]] || [[ -z "$SAM" ]]; then
+        printf "
+Usage: $usage
+About: $about
+Last updated: $lastUpdate
+"
+	exit
+fi
+
+
+## Detect if samtools and bedtools are installed 
+
+if command -v bedtools &> /dev/null && command -v samtools &> /dev/null; then
+        printf "
+Detected samtools and bedtools; continuing....
+"
+else
+        printf "
+This script requires samtools and bedtools.
+Please ensure they are installed and in \"\$PATH\".
+"
+        exit
+fi 
+
+prefix=${SAM%.sam}
+tmpfile1=$prefix"_INDICES_"$RANDOM$RANDOM$RANDOM".tmp"
+tmpfile2=$prefix"_MAPPED_READS_"$RANDOM$RANDOM$RANDOM".tmp"
+tmpfile3=$prefix"_MAPPED_READS_AND_INDICES_"$RANDOM$RANDOM$RANDOM".tmp"
+outfile=$prefix"-dedup.bed"
+
+printf "
+Last updated: $lastUpdate
+
+Using the following parameters:
+
+Index bp	$IndexLen
+R1 read file 	$R1fastq
+R2 read file 	$R2fastq
+Fastq gzipped?	$Gzipped
+Flip strands?	$FlipStrands
+PRO-Seq mode?	$PROmode
+Keep tmp files?	$KeepTmp
+Alignment file	$SAM
+Threads		$Threads
+RAM per thread	$BufferSize
+"
+
+
+## For all reads, report a qname (no @), the R1 index, and the R2 index
+
+if [ $Gzipped == 0 ]; then
+	printf "
+Writing molecular indices from uncompressed $R1fastq and $R2fastq to $tmpfile1.
+"
+	join -j 1 <( cat $R1fastq | awk -v LEN=$IndexLen 'BEGIN { FS = "\t" } NR%4 == 1 { qname = substr($1,2) } NR%4 == 2 { print qname "\t" substr($1,1,LEN) }' ) <( cat $R2fastq | awk -v LEN=$IndexLen 'BEGIN { FS = "\t" } NR%4 == 1 { qname = substr($1,2) } NR%4 == 2 { print qname "\t" substr($1,1,LEN) }' ) > $tmpfile1
+fi
+
+if [ $Gzipped == 1 ]; then
+	printf "
+Writing molecular indices from gzipped $R1fastq and $R2fastq to $tmpfile1.
+"
+	join -j 1 <( zcat $R1fastq | awk -v LEN=$IndexLen 'BEGIN { FS = "\t" } NR%4 == 1 { qname = substr($1,2) } NR%4 == 2 { print qname "\t" substr($1,1,LEN) }' ) <( zcat $R2fastq | awk -v LEN=$IndexLen 'BEGIN { FS = "\t" } NR%4 == 1 { qname = substr($1,2) } NR%4 == 2 { print qname "\t" substr($1,1,LEN) }' ) > $tmpfile1
+fi
+
+
+## For all mapped reads, report a qname and genomic position in BED format
+## This step uses bedtools bamtobed to ensure accurate fragment calling
+## WARNING: this used to break if the qname contains whitespace
+## 	This has been set to look for "\t", which sometimes creates additional columns
+##	This has been rectified by making the final step sort parameter open-ended
+
+if [ $PROmode == 0 ]; then
+	if [ $FlipStrands == 0 ]; then
+		printf "
+Writing mapped reads from $SAM to $tmpfile2.
+"
+		samtools view -S -u -f 0x3 $SAM | samtools sort -l 0 -@ $Threads -m $BufferSize -n -O bam | bedtools bamtobed -i stdin -bedpe -mate1 | awk 'BEGIN { FS = "\t" } $9 == "+" { print $1 "\t" $2 "\t" $6 "\t" $7 "\t" $8 "\t" "+" } $9 == "-" { print $1 "\t" $5 "\t" $3 "\t" $7 "\t" $8 "\t" "-" }' > $tmpfile2
+	fi
+
+	if [ $FlipStrands == 1 ]; then
+		printf "
+Flipping strands and writing mapped reads from $SAM to $tmpfile2.
+"
+		samtools view -S -u -f 0x3 $SAM | samtools sort -l 0 -@ $Threads -m $BufferSize -n -O bam | bedtools bamtobed -i stdin -bedpe -mate1 | awk 'BEGIN { FS = "\t" } $9 == "+" { print $1 "\t" $2 "\t" $6 "\t" $7 "\t" $8 "\t" "-" } $9 == "-" { print $1 "\t" $5 "\t" $3 "\t" $7 "\t" $8 "\t" "+" }' > $tmpfile2
+	fi
+fi
+
+
+## PRO-Seq mode: remove 1 nt from end of fragment to reflect biotin-11-NTP incorporation
+## Note that if the strand is flipped, the position of the fragment end changes
+
+if [ $PROmode == 1 ]; then
+	if [ $FlipStrands == 0 ]; then
+		printf "
+Writing mapped reads from $SAM to $tmpfile2 and subtracting 1 nt from 3' ends.
+"
+		samtools view -S -u -f 0x3 $SAM | samtools sort -l 0 -@ $Threads -m $BufferSize -n -O bam | bedtools bamtobed -i stdin -bedpe -mate1 | awk 'BEGIN { FS = "\t" } $9 == "+" { print $1 "\t" $2 "\t" $6-1 "\t" $7 "\t" $8 "\t" "+" } $9 == "-" { print $1 "\t" $5+1 "\t" $3 "\t" $7 "\t" $8 "\t" "-" }' > $tmpfile2
+	fi
+	if [ $FlipStrands == 1 ]; then
+		printf "
+Flipping strands and writing mapped reads from $SAM to $tmpfile2 and subtracting 1 nt from 3' ends.
+"
+		samtools view -S -u -f 0x3 $SAM | samtools sort -l 0 -@ $Threads -m $BufferSize -n -O bam | bedtools bamtobed -i stdin -bedpe -mate1 | awk 'BEGIN { FS = "\t" } $9 == "+" { print $1 "\t" $2+1 "\t" $6 "\t" $7 "\t" $8 "\t" "-" } $9 == "-" { print $1 "\t" $5 "\t" $3-1 "\t" $7 "\t" $8 "\t" "+" }' > $tmpfile2
+	fi
+fi
+
+
+## For all lines with matching qnames, report a qname, genomic position, and molecular indices
+
+if [ -s "$tmpfile1" ] && [ -s "$tmpfile2" ]; then
+	printf "
+Sorting $tmpfile1 and $tmpfile2 and writing mapped reads with indices to $tmpfile3.
+"
+	join -1 4 -2 1 --nocheck-order <( cat $tmpfile2 | sort --parallel $Threads --buffer-size=$BufferSize -k4,4 ) <( cat $tmpfile1 | sort --parallel $Threads --buffer-size=$BufferSize -k1,1 ) > $tmpfile3
+fi
+
+
+## Sort all lines by genomic position (starting at field 2), collapse non-unique lines, and output a deduplicated BED file 
+
+if [ -s "$tmpfile3" ]; then
+	printf "
+Sorting $tmpfile3 by genomic position and writing deduplicated reads to $outfile.
+"
+	cat $tmpfile3 | sort --parallel $Threads --buffer-size=$BufferSize -k2 -u | awk '{ print $2 "\t" $3 "\t" $4 "\t" $1 "\t" $5 "\t" $6 }' > $outfile
+fi
+
+
+## Clean up and quit
+
+if [ -s "$outfile" ]; then
+	if [ $KeepTmp == 0 ]; then
+		printf "
+Removing temporary files, then quitting.
+
+"
+		rm $tmpfile1
+		rm $tmpfile2
+		rm $tmpfile3
+		exit
+	fi
+	if [ $KeepTmp == 1 ]; then
+		printf "
+Quitting without removing temporary files.
+
+"
+	exit
+	fi
+fi
