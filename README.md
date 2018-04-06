@@ -12,7 +12,7 @@ Default parameters are hard-coded at the beginning of the script. We recommend m
 
 ## Usage:
 
-dedup is a bash script that relies on common Linux utilities, sort, awk, [samtools](https://github.com/samtools/samtools/releases/latest), and [bedtools](http://bedtools.readthedocs.io/en/latest/).
+dedup is a bash script that relies on common Linux utilities, sort, awk, [samtools](https://github.com/samtools/samtools/releases/latest), and [bedtools](http://bedtools.readthedocs.io/en/latest/). It is known to work with samtools v1.4.1 and bedtools v2.26.0.
 
 Before using dedup, you must first perform an alignment. While these steps will vary depending on your experiment and software preferences, a possible paired-end workflow is to eliminate 3' sequencing adapters from both reads with [Trim Galore](https://github.com/FelixKrueger/TrimGalore/releases/latest), and then perform an alignment with [bowtie](https://github.com/BenLangmead/bowtie/releases/latest) using the `--trim5 <n>` and `--trim3 <n>` options, where `<n>` is the number of bases in your UMIs. Regardless of your choice, your alignment output must be in SAM format.
 
