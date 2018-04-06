@@ -4,7 +4,7 @@
 # Created by Kyle Nilson 2017-09-11
 #-----------------------------------------------------------------------------
 
-lastUpdate="2018-03-05 by Kyle Nilson."
+lastUpdate="2018-04-06 by Kyle Nilson."
 
 export LANG=en_EN
 IndexLen=4
@@ -28,29 +28,29 @@ This script outputs a deduplicated BED file.
 "
 
 usage="	
-dedup [options]
--n <int>	molecular index length [default $IndexLen]
+dedup -S <reads.sam> -1 <R1.fq> -2 <R2.fq> [options]
+-S <reads.sam>	paired-end alignment file in SAM format
 -1 <R1.fq>	R1 reads with untrimmed 5' n bp molecular index
 -2 <R2.fq>	R2 reads with untrimmed 5' n bp molecular index
+-n <int>	molecular index length [default $IndexLen]
 -g 		use if R1 and R2 files are gzipped
 -f		use to flip strands of final BED file
 -p		use to subtract 1 nt from 3' pause site for PRO-Seq
 -k		use to keep temporary files when troubleshooting
--S <reads.sam>	paired-end alignment file
 -t <int>	number of threads for sort [default $Threads]
 -m <size>	size of memory buffer per thread for sort [default $BufferSize]
 "
 
-while getopts "n:1:2:gfpkS:t:m:" opt; do
+while getopts "S:1:2:n:gfpkt:m:" opt; do
         case $opt in
-		n) IndexLen=$OPTARG;;
+		S) SAM=$OPTARG;;
 		1) R1fastq=$OPTARG;;
 		2) R2fastq=$OPTARG;;
+		n) IndexLen=$OPTARG;;
 		g) Gzipped=1;;
 		f) FlipStrands=1;;
 		p) PROmode=1;;
 		k) KeepTmp=1;;
-		S) SAM=$OPTARG;;
 		t) Threads=$OPTARG;;
 		m) BufferSize=$OPTARG;;
 	esac
