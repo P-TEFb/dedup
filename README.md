@@ -64,6 +64,4 @@ dedup was developed by [Kyle Nilson](https://github.com/kylenilson) in the lab o
 
 It was first described in the following manuscript:
 
-```
-Soon....
-```
+**Nucleotide Resolution Comparison of Transcription of Human Cytomegalovirus and Host Genomes Reveals Universal Use of RNA Polymerase II Elongation Control Driven by Dissimilar Core Promoter Elements.** Mrutyunjaya Parida, Kyle A. Nilson, Ming Li, Christopher B. Ball, Harrison A. Fuchs, Christine K. Lawson, Donal S. Luse, Jeffery L. Meier, and David H. Price. *mBio* 2019 Feb 12;10(1). `PMID: 30755505` DOI: [10.1128/mBio.02047-18](https://doi.org/10.1128/mBio.02047-18)  
